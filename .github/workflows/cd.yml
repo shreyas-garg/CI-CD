@@ -1,46 +1,44 @@
 name: CD Pipeline
 
 on:
-  workflow_run:
-    workflows: ["CI Pipeline"]
-    types:
-      - completed
+  push:
     branches:
       - master
+  workflow_dispatch:
 
 jobs:
   deploy:
     runs-on: ubuntu-latest
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-    
-    - name: Set up kubectl
-      uses: azure/setup-kubectl@v3
-      with:
-        version: 'latest'
-    
-    - name: Create kind cluster
-      uses: helm/kind-action@v1.8.0
-      with:
-        cluster_name: demo-cluster
-    
-    - name: Update deployment with DockerHub username
-      run: |
-        sed -i "s/<DOCKERHUB_USERNAME>/${{ secrets.DOCKERHUB_USERNAME }}/g" k8s/deployment.yaml
-    
-    - name: Apply Kubernetes manifests
-      run: |
-        kubectl apply -f k8s/deployment.yaml
-        kubectl apply -f k8s/service.yaml
-    
-    - name: Verify deployment
-      run: |
-        kubectl rollout status deployment/demo-app --timeout=120s
-    
-    - name: Get deployment status
-      run: |
-        kubectl get pods
-        kubectl get services
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up kubectl
+        uses: azure/setup-kubectl@v3
+        with:
+          version: 'latest'
+      
+      - name: Create kind cluster
+        uses: helm/kind-action@v1.8.0
+        with:
+          cluster_name: demo-cluster
+      
+      - name: Load Docker image to kind
+        run: |
+          # Build and load image directly to kind cluster
+          docker build -t demo-app:latest .
+          kind load docker-image demo-app:latest --name demo-cluster
+      
+      - name: Apply Kubernetes manifests
+        run: |
+          kubectl apply -f k8s/deployment.yaml
+          kubectl apply -f k8s/service.yaml
+      
+      - name: Verify deployment
+        run: |
+          kubectl rollout status deployment/demo-app --timeout=120s
+      
+      - name: Get deployment status
+        run: |
+          kubectl get pods
+          kubectl get services

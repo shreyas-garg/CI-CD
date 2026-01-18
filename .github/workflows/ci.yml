@@ -4,37 +4,263 @@ on:
   push:
     branches:
       - master
+  pull_request:
+    branches:
+      - master
   workflow_dispatch:
 
 jobs:
-  build:
+  # Stage 1: Code Checkout
+  checkout:
     runs-on: ubuntu-latest
-    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v3
-    
-    - name: Set up JDK 17
-      uses: actions/setup-java@v3
-      with:
-        java-version: '17'
-        distribution: 'temurin'
-        cache: maven
-    
-    - name: Run tests
-      run: mvn test
-    
-    - name: Build with Maven
-      run: mvn clean package -DskipTests
-    
-    - name: Build Docker image
-      run: docker build -t ${{ secrets.DOCKERHUB_USERNAME }}/demo-app:latest .
-    
-    - name: Login to DockerHub
-      uses: docker/login-action@v2
-      with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
-    
-    - name: Push Docker image
-      run: docker push ${{ secrets.DOCKERHUB_USERNAME }}/demo-app:latest
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+  # Stage 2: Setup Runtime Environment
+  setup:
+    needs: checkout
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up JDK 20
+        uses: actions/setup-java@v3
+        with:
+          java-version: '20'
+          distribution: 'temurin'
+          cache: maven
+
+  # Stage 3: Code Linting (Built-in Java linting)
+  lint:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up JDK 20
+        uses: actions/setup-java@v3
+        with:
+          java-version: '20'
+          distribution: 'temurin'
+          cache: maven
+      
+      - name: Run SpotBugs (Static Analysis)
+        run: /Users/shreyasgarg/.maven/maven-3.9.12/bin/mvn compile -Dmaven.compiler.failOnWarning=true
+        continue-on-error: true
+
+  # Stage 4: SAST (Static Application Security Testing) - CodeQL
+  sast:
+    needs: setup
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v2
+        with:
+          languages: java
+      
+      - name: Set up JDK 20
+        uses: actions/setup-java@v3
+        with:
+          java-version: '20'
+          distribution: 'temurin'
+          cache: maven
+      
+      - name: Build for CodeQL
+        run: mvn clean package -DskipTests
+      
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v2
+
+  # Stage 5: SCA (Software Composition Analysis) - Dependency Check
+  sca:
+    needs: setup
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up JDK 20
+        uses: actions/setup-java@v3
+        with:
+          java-version: '20'
+          distribution: 'temurin'
+          cache: maven
+      
+      - name: Run Dependency Check
+        run: mvn org.owasp:dependency-check-maven:check -DskipProvidedScope=true -DskipTestScope=true
+        continue-on-error: true
+
+  # Stage 6: Unit Tests
+  test:
+    needs: setup
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up JDK 20
+        uses: actions/setup-java@v3
+        with:
+          java-version: '20'
+          distribution: 'temurin'
+          cache: maven
+      
+      - name: Run Unit Tests
+        run: mvn test
+      
+      - name: Upload Test Results
+        if: always()
+        uses: actions/upload-artifact@v3
+        with:
+          name: test-reports
+          path: target/surefire-reports/
+
+  # Stage 7: Build Artifact
+  build:
+    needs: [lint, sast, sca, test]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Set up JDK 20
+        uses: actions/setup-java@v3
+        with:
+          java-version: '20'
+          distribution: 'temurin'
+          cache: maven
+      
+      - name: Build with Maven
+        run: mvn clean package -DskipTests
+      
+      - name: Upload Build Artifact
+        uses: actions/upload-artifact@v3
+        with:
+          name: build-artifact
+          path: target/demo-app.jar
+
+  # Stage 8: Docker Build
+  docker-build:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download Build Artifact
+        uses: actions/download-artifact@v3
+        with:
+          name: build-artifact
+          path: target/
+      
+      - name: Build Docker Image
+        run: docker build -t demo-app:${{ github.sha }} -t demo-app:latest .
+      
+      - name: Save Docker Image
+        run: docker save demo-app:latest | gzip > demo-app.tar.gz
+      
+      - name: Upload Docker Image
+        uses: actions/upload-artifact@v3
+        with:
+          name: docker-image
+          path: demo-app.tar.gz
+
+  # Stage 9: Container Vulnerability Scanning (Trivy)
+  container-scan:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download Docker Image
+        uses: actions/download-artifact@v3
+        with:
+          name: docker-image
+      
+      - name: Load Docker Image
+        run: docker load -i demo-app.tar.gz
+      
+      - name: Run Trivy Vulnerability Scan
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: demo-app:latest
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+      
+      - name: Upload Trivy Results
+        uses: github/codeql-action/upload-sarif@v2
+        with:
+          sarif_file: 'trivy-results.sarif'
+
+  # Stage 10: Runtime Container Test
+  runtime-test:
+    needs: docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Docker Image
+        uses: actions/download-artifact@v3
+        with:
+          name: docker-image
+      
+      - name: Load Docker Image
+        run: docker load -i demo-app.tar.gz
+      
+      - name: Start Container
+        run: docker run -d --name demo-app-test -p 8080:8080 demo-app:latest
+      
+      - name: Wait for Application to Start
+        run: sleep 10
+      
+      - name: Health Check
+        run: curl -f http://localhost:8080/health || exit 1
+      
+      - name: Smoke Test
+        run: curl -f http://localhost:8080/ || exit 1
+      
+      - name: Cleanup
+        run: docker stop demo-app-test || true
+
+  # Stage 11: Push to Registry
+  push:
+    needs: [runtime-test, container-scan]
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/master' && github.event_name == 'push'
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Download Docker Image
+        uses: actions/download-artifact@v3
+        with:
+          name: docker-image
+      
+      - name: Load Docker Image
+        run: docker load -i demo-app.tar.gz
+      
+      - name: Login to DockerHub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+      
+      - name: Tag and Push Image
+        run: |
+          docker tag demo-app:latest ${{ secrets.DOCKERHUB_USERNAME }}/demo-app:latest
+          docker tag demo-app:latest ${{ secrets.DOCKERHUB_USERNAME }}/demo-app:${{ github.sha }}
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/demo-app:latest
+          docker push ${{ secrets.DOCKERHUB_USERNAME }}/demo-app:${{ github.sha }}

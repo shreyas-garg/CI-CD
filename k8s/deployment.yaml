@@ -2,10 +2,17 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   name: demo-app
+  namespace: default
   labels:
     app: demo-app
+    version: v1
 spec:
-  replicas: 1
+  replicas: 2
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
   selector:
     matchLabels:
       app: demo-app
@@ -13,10 +20,43 @@ spec:
     metadata:
       labels:
         app: demo-app
+        version: v1
     spec:
       containers:
       - name: demo-app
-        image: <DOCKERHUB_USERNAME>/demo-app:latest
+        image: demo-app:latest
+        imagePullPolicy: Never  # Use 'IfNotPresent' for production with registry
         ports:
-        - containerPort: 8080
-        imagePullPolicy: Always
+        - name: http
+          containerPort: 8080
+          protocol: TCP
+        env:
+        - name: JAVA_OPTS
+          value: "-Xmx512m -Xms256m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 3
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 10
+          periodSeconds: 5
+          timeoutSeconds: 3
+          failureThreshold: 2
+        resources:
+          requests:
+            memory: "256Mi"
+            cpu: "250m"
+          limits:
+            memory: "512Mi"
+            cpu: "500m"
+        securityContext:
+          allowPrivilegeEscalation: false
+          readOnlyRootFilesystem: false
+          runAsNonRoot: false
