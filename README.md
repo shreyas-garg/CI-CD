@@ -1,376 +1,204 @@
-# Advanced DevOps CI/CD Project: Spring Boot Application
+# DevOps CI/CD Project - Spring Boot Application
 
 ## Project Overview
-This is a production-grade CI/CD pipeline implementation using GitHub Actions and Kubernetes for a Spring Boot application. The project demonstrates industry best practices in Continuous Integration, Continuous Deployment, security scanning, and containerization.
+
+A simple but complete CI/CD pipeline for a Spring Boot application using GitHub Actions, Docker, and Kubernetes.
 
 ### Technology Stack
-- **Language**: Java 21 (LTS)
-- **Framework**: Spring Boot 3.2.0
-- **Build Tool**: Maven 3.9
-- **Container**: Docker
-- **Orchestration**: Kubernetes
-- **CI/CD**: GitHub Actions
-- **Security**: CodeQL, Trivy, OWASP Dependency-Check
+- **Java 20** - Programming language  
+- **Spring Boot 3.2** - Web framework
+- **Maven** - Build tool
+- **Docker** - Containerization
+- **Kubernetes** - Orchestration
+- **GitHub Actions** - CI/CD automation
 
 ---
 
-## CI/CD Pipeline Architecture
+## CI/CD Pipeline (5 Stages)
 
-### Pipeline Stages Explained
+### Stage 1: Test & Build ✓
+- Runs unit tests using Maven
+- Creates JAR file if tests pass
+- **Why**: Ensures code works before packaging
 
-#### 1. **Code Checkout** ✓
-**Why it matters**: First step to retrieve source code from repository
-- Fetches the latest code from master branch
-- Enables all downstream stages to work with current codebase
-
-#### 2. **Setup Runtime Environment** ✓
-**Why it matters**: Ensures consistent Java environment across all builds
-- Installs JDK 21 (LTS version)
-- Caches Maven dependencies to speed up builds
-- Prevents "works on my machine" issues
-
-#### 3. **Code Linting (Checkstyle)** ✓
-**Why it matters**: Enforces coding standards and prevents technical debt
-- Validates code follows Google Java Style Guide
-- Catches formatting issues early
-- Improves code maintainability
-- Prevents style-related code reviews
-
-#### 4. **SAST - CodeQL Analysis** ✓
-**Why it matters**: Detects security vulnerabilities in application code
-- Uses GitHub's CodeQL engine
-- Identifies OWASP Top 10 vulnerabilities
-- Analyzes code patterns for potential security issues
-- Results integrated into GitHub Security tab
-- **Shift-left Security**: Catches vulnerabilities before deployment
-
-#### 5. **SCA - Dependency Analysis** ✓
-**Why it matters**: Identifies vulnerable dependencies (supply-chain security)
-- Uses OWASP Dependency-Check
-- Scans Maven dependencies for known CVEs
+### Stage 2: Security Check ✓
+- Checks Maven dependencies for known vulnerabilities (OWASP)
 - Fails build if critical vulnerabilities found
-- Ensures third-party libraries are secure
+- **Why**: Prevents vulnerable libraries from being deployed
 
-#### 6. **Unit Tests** ✓
-**Why it matters**: Validates business logic correctness
-- Runs all unit tests in the project
-- Ensures code doesn't have regressions
-- Generates test reports for documentation
-- Prevents broken code from being deployed
+### Stage 3: Docker Build ✓
+- Builds Docker image from the JAR file
+- Image contains Java 20 runtime + application
+- **Why**: Ensures application runs the same everywhere
 
-#### 7. **Build Artifact** ✓
-**Why it matters**: Creates executable JAR file
-- Compiles Java code to bytecode
-- Packages with dependencies
-- Artifact uploaded for later stages
-- Ensures only tested code is deployed
+### Stage 4: Test Container ✓
+- Starts the Docker container
+- Calls `/health` endpoint to verify it works
+- **Why**: Ensures container actually runs
 
-#### 8. **Docker Build** ✓
-**Why it matters**: Creates container image for consistency across environments
-- Builds image with Java 21 runtime
-- Ensures application runs same way everywhere
-- Image versioned by commit SHA
-- Enables containerized deployment
-
-#### 9. **Container Vulnerability Scan (Trivy)** ✓
-**Why it matters**: Detects OS and library vulnerabilities in Docker image
-- Scans container for security vulnerabilities
-- Checks base image for known CVEs
-- Prevents vulnerable images from reaching production
-- Results integrated into GitHub Security tab
-
-#### 10. **Runtime Container Test** ✓
-**Why it matters**: Validates application works correctly in container
-- Smoke test: Verifies application starts
-- Health check: Confirms `/health` endpoint responds
-- Integration test: Ensures container networking works
-- Catches runtime issues before deployment
-
-#### 11. **Push to Registry** ✓
-**Why it matters**: Makes image available for deployment
-- Only pushes if all checks pass (security gate)
-- Only pushes from master branch (production safety)
-- Tags image with commit SHA (traceability)
-- Enables versioning and rollback capabilities
+### Stage 5: Push to DockerHub ✓
+- Pushes image to DockerHub registry
+- Only happens on master branch
+- **Why**: Makes image available for deployment
 
 ---
 
-## Security Architecture (DevSecOps)
+## Quick Start
 
-### Shift-Left Security Philosophy
-This pipeline implements security checks at every stage to catch issues early:
+### Local Development
 
-```
-Development → Commit → CodeQL → Dependency Check → Build → Container Scan → Deploy
-   (IDE)     (Pre-commit)  (SAST)     (SCA)       (Artifact)   (Image)     (Secure)
-```
-
-### Security Gates
-1. **Code-level vulnerabilities** blocked by CodeQL
-2. **Dependency vulnerabilities** blocked by Dependency-Check
-3. **Container vulnerabilities** identified by Trivy (advisory)
-4. **Staging security** ensured by health checks
-
----
-
-## Local Setup & Testing
-
-### Prerequisites
+**Build:**
 ```bash
-# Java 21
-java --version  # Should be 21.x.x
-
-# Maven
-mvn --version   # Should be 3.9+
-
-# Docker
-docker --version
-
-# Kubernetes
-kubectl version --client
-```
-
-### Build & Run Locally
-
-#### 1. Build the Application
-```bash
-cd /Users/shreyasgarg/Desktop/ci
 mvn clean package
 ```
 
-#### 2. Run Application Locally
+**Run:**
 ```bash
 java -jar target/demo-app.jar
-# Application runs on http://localhost:8080
 ```
 
-#### 3. Access Health Endpoint
+**Test:**
 ```bash
 curl http://localhost:8080/health
-# Expected: {"status":"UP"}
 ```
 
-#### 4. Run Unit Tests
-```bash
-mvn test
-```
+### Docker
 
-#### 5. Run Code Quality Checks
-```bash
-mvn checkstyle:check
-```
-
-#### 6. Check Dependencies for Vulnerabilities
-```bash
-mvn org.owasp:dependency-check-maven:check
-```
-
----
-
-## Docker Usage
-
-### Build Docker Image
+**Build:**
 ```bash
 docker build -t demo-app:latest .
 ```
 
-### Run Container
+**Run:**
 ```bash
-docker run -d -p 8080:8080 --name demo-app demo-app:latest
+docker run -p 8080:8080 demo-app:latest
 ```
 
-### Verify Container
-```bash
-curl http://localhost:8080/health
-docker logs demo-app
-```
+### Kubernetes
 
-### Scan Image with Trivy
-```bash
-docker run --rm -v /var/run/docker.sock:/var/run/docker.sock \
-  aquasec/trivy image demo-app:latest
-```
-
----
-
-## Kubernetes Deployment
-
-### Local Testing with Kind (Kubernetes in Docker)
-
-#### 1. Create Kind Cluster
+**Deploy locally:**
 ```bash
 kind create cluster --name demo-cluster
-```
-
-#### 2. Load Docker Image
-```bash
 kind load docker-image demo-app:latest --name demo-cluster
-```
-
-#### 3. Deploy Application
-```bash
 kubectl apply -f k8s/deployment.yaml
 kubectl apply -f k8s/service.yaml
-```
-
-#### 4. Check Deployment Status
-```bash
 kubectl get pods
-kubectl get svc
-
-# Expected output:
-# NAME              READY   STATUS    RESTARTS   AGE
-# demo-app-xxxxx    1/1     Running   0          10s
-```
-
-#### 5. Access Application
-```bash
-# Get the node port
-kubectl get svc demo-app-service
-
-# Access the application
-curl http://localhost:30080/health
-```
-
-#### 6. View Logs
-```bash
-kubectl logs -f deployment/demo-app
-```
-
-#### 7. Cleanup
-```bash
-kind delete cluster --name demo-cluster
 ```
 
 ---
 
-## GitHub Secrets Configuration (REQUIRED)
+## GitHub Secrets (Required)
 
-### Required Secrets
-Add these secrets to your GitHub repository:
+Add these to your GitHub repository settings:
 
-1. **DOCKERHUB_USERNAME**
-   - Your DockerHub username
-   - Used for pushing images to DockerHub
-   - Path: Settings → Secrets and variables → Actions → New repository secret
+1. **DOCKERHUB_USERNAME** - Your DockerHub username
+2. **DOCKERHUB_TOKEN** - Personal access token from DockerHub
 
-2. **DOCKERHUB_TOKEN**
-   - DockerHub Personal Access Token
-   - Create at: https://hub.docker.com/settings/security
-   - Requires push permissions
-
-### How to Add Secrets
-1. Go to Repository → Settings
-2. Click "Secrets and variables" → "Actions"
-3. Click "New repository secret"
-4. Add `DOCKERHUB_USERNAME` and `DOCKERHUB_TOKEN`
+Without these, the "Push to DockerHub" stage will fail.
 
 ---
 
 ## File Structure
 
 ```
-ci/
-├── .github/
-│   └── workflows/
-│       ├── ci.yml          # Main CI pipeline (11 stages)
-│       └── cd.yml          # CD pipeline (Kubernetes deployment)
+├── .github/workflows/
+│   ├── ci.yml          # Build, test, security, Docker, push
+│   └── cd.yml          # Deploy to Kubernetes
 ├── k8s/
-│   ├── deployment.yaml     # Kubernetes Deployment manifest
-│   └── service.yaml        # Kubernetes Service manifest
-├── src/
-│   └── main/
-│       └── java/com/example/demo/
-│           ├── DemoApplication.java      # Main Spring Boot app
-│           └── HealthController.java     # Health endpoint
-├── Dockerfile              # Docker image definition
-├── pom.xml                 # Maven configuration with plugins
-├── README.md               # This file
+│   ├── deployment.yaml # Kubernetes deployment (2 replicas)
+│   └── service.yaml    # NodePort service
+├── src/main/java/com/example/demo/
+│   ├── DemoApplication.java       # Spring Boot app
+│   └── HealthController.java      # /health endpoint
+├── Dockerfile          # Docker configuration
+├── pom.xml             # Maven build configuration
+└── README.md           # This file
 ```
 
 ---
 
 ## Key Features
 
-### Continuous Integration (CI)
-- ✅ Automated builds on every push
-- ✅ Maven dependency caching for fast builds
-- ✅ Parallel stage execution where possible
-- ✅ Artifact storage for traceability
-
-### Code Quality
-- ✅ Checkstyle validation (Google Java Style Guide)
-- ✅ Static analysis for maintainability
-- ✅ Code coverage reporting
-
-### Security (DevSecOps)
-- ✅ CodeQL SAST for application vulnerabilities
-- ✅ OWASP Dependency-Check for supply-chain risks
-- ✅ Trivy for container image scanning
-- ✅ Security findings in GitHub Security tab
-- ✅ Multiple security gates prevent vulnerable code from reaching production
-
-### Containerization
-- ✅ Docker image built for every commit
-- ✅ Base image uses Java 21 LTS
-- ✅ Multi-stage health checks
-- ✅ Proper resource limits in Kubernetes
-
-### Kubernetes Orchestration
-- ✅ Declarative infrastructure (YAML)
-- ✅ Rolling updates strategy
-- ✅ Liveness and readiness probes
-- ✅ Resource requests and limits
-- ✅ Service discovery
-
-### Automation
-- ✅ Zero-touch deployment on master branch
-- ✅ Workflow run on both push and manual trigger
-- ✅ Artifact management for build traceability
-- ✅ Automated test reporting
+✅ **Automated Testing** - Tests run before build  
+✅ **Security Scanning** - Dependency vulnerability checks  
+✅ **Docker Support** - Container image for every commit  
+✅ **Kubernetes Ready** - Deploy with `kubectl apply`  
+✅ **Health Checks** - Pod auto-recovery if unhealthy  
+✅ **Resource Limits** - CPU/Memory constraints  
+✅ **Rolling Updates** - Zero-downtime deployments  
 
 ---
 
-## Questions to Expect (and Answers)
+## Understanding the Pipeline
 
-### Q1: Why do you need CodeQL if you have Checkstyle?
-**A**: Checkstyle validates code *style* (formatting, naming conventions). CodeQL detects *security vulnerabilities* (SQL injection, buffer overflows, XSS). They serve different purposes.
+When you push to `master`:
 
-### Q2: What happens if Dependency-Check finds a vulnerability?
-**A**: The build fails (gate). The team must either:
-- Update the vulnerable dependency to a patched version
-- Find an alternative library
-- Explicitly suppress if false positive (documented)
+```
+Push to master
+    ↓
+Test & Build (Maven test + compile)
+    ↓
+Security Check (Check for vulnerable dependencies)
+    ↓
+Docker Build (Create container image)
+    ↓
+Test Container (Verify it runs & responds)
+    ↓
+Push to DockerHub (Make image available)
+    ↓
+Kubernetes Deploy (Update running pods)
+```
 
-### Q3: Why scan container images if code is already scanned?
-**A**: Code scanning checks *application code*. Container scanning checks *OS libraries and base image*. A vulnerable Java library or OS package can compromise security.
-
-### Q4: What's the difference between liveness and readiness probes?
-**A**: 
-- **Liveness**: Is the pod alive? If not, kill and restart it
-- **Readiness**: Is the pod ready to serve traffic? If not, remove from load balancer
-
-### Q5: Why use Kubernetes if Docker works fine?
-**A**: Docker runs one container. Kubernetes:
-- Manages multiple containers (replicas)
-- Handles failures (auto-restart)
-- Enables scaling
-- Manages networking and storage
-- Used in production environments
+If any stage fails, the next stages don't run.
 
 ---
 
-## Conclusion
+## Troubleshooting
 
-This pipeline demonstrates a complete, production-grade CI/CD implementation that:
-- ✅ Automates builds and tests
-- ✅ Enforces code quality standards
-- ✅ Integrates comprehensive security scanning
-- ✅ Containerizes applications consistently
-- ✅ Orchestrates deployments with Kubernetes
-- ✅ Provides clear visibility into the entire process
+**Build fails:**
+```bash
+mvn clean package -X  # Run with debug output
+```
 
-Each stage has a clear purpose, contributing to faster delivery, higher quality, and better security.
+**Container won't start:**
+```bash
+docker logs <container-id>
+```
+
+**Kubernetes issues:**
+```bash
+kubectl describe pod demo-app-xxx
+kubectl logs deployment/demo-app
+```
+
+---
+
+## Common Questions
+
+**Q: What's the /health endpoint?**  
+A: It's a simple HTTP endpoint that returns {"status":"UP"} to verify the app is running.
+
+**Q: Why do we need Docker?**  
+A: Docker packages the application with all dependencies. "If it works in Docker, it works everywhere."
+
+**Q: Why do we need Kubernetes?**  
+A: Kubernetes manages containers - handles crashes, scales to multiple instances, manages networking.
+
+**Q: What happens if a pod crashes?**  
+A: Kubernetes automatically restarts it using the `livenessProbe`.
+
+**Q: Can we have multiple instances?**  
+A: Yes, change `replicas: 2` to `replicas: 3` in `k8s/deployment.yaml`.
+
+---
+
+## Next Steps
+
+1. Configure GitHub secrets (DOCKERHUB_USERNAME, DOCKERHUB_TOKEN)
+2. Push code to `master` branch
+3. Check GitHub Actions tab to see pipeline run
+4. Verify image pushed to DockerHub
+5. Run locally with kind to test Kubernetes deployment
 7. **Get Status** - Displays pod and service information
 
 The CD pipeline automates deployment to Kubernetes and validates that the application is running correctly.
